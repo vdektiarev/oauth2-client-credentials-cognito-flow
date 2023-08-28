@@ -1,0 +1,12 @@
+server:
+  port: 8081
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.<your_region>.amazonaws.com/<your_user_pool_id>
+
+resourceserver:
+  id: <your_resource_server_id>
