@@ -1,6 +1,7 @@
 .gradle/
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
+application-local.yml
 
 ### STS ###
 .apt_generated
