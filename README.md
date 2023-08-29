@@ -67,7 +67,7 @@ This service will have protected API and thus will act as the Resource Server in
 Adding AWS Cognito User Pool with configured app client and a resource server along with the server scopes would complete the picture.
 The illustration of the flow is provided below:
 
-![Client Credentials Flow](images\client_credentials_flow.png)
+![Client Credentials Flow](images/client_credentials_flow.png)
 
 ## Configuring the Authorization Server
 
@@ -88,7 +88,7 @@ At Step 1 we need to select creation of a User Pool specifically, as Federated I
 Sign-in options are not mandatory for selection in our specific case, as we are not planning to have actual users in our pool at the moment.
 However, this might come in handy when we start to expand our system and start integrating user interactions. And once sign in options are configured, they can't be changed later. 
 
-![Step 1](images\cognito_1.png)
+![Step 1](images/cognito_1.png)
 
 At Step 2, we configure password, MFA and account recovery policies, which do not affect our server-to-server communication flow, and impact only user experience.
 So, feel free to specify desirable options.
@@ -97,29 +97,29 @@ At Step 3, you can enable or disable self registration for the users. This is an
 We'll disable this option for our pool for security purposes.
 Apart from that, you can also configure user account verification flow and user attribute changes confirmation flow - which do not impact server-to-server communications.
 
-![Step 3](images\cognito_2.png)
+![Step 3](images/cognito_2.png)
 
 Step 4 is about email messages delivery to end users in case of different kinds of their interactions with our pool.
 We'll switch the delivery mechanism to AWS Cognito here for configuration simplicity.
 
-![Step 4](images\cognito_3.png)
+![Step 4](images/cognito_3.png)
 
 Step 5 is important. Here we need to specify a unique name for our user pool and configure an initial app client.
 User Pool Name can't be changed once set, so we need to name it carefully. Hosted UI configurations are out of scope of our case, so we'll skip these options.
 
-![Step 5 - User Pool Name](images\cognito_5.png)
+![Step 5 - User Pool Name](images/cognito_5.png)
 
 Initial app client name in our case can match the name of our service which would act as the client.
 We need to select the Confidential Client type, as the communication would not require a user intervention or any other flows via browser.
 Plus we'll need to select Client Secret generation in order to successfully implement Client Credentials Flow.
 
-![Step 5 - App Client](images\cognito_6.png)
+![Step 5 - App Client](images/cognito_6.png)
 
 Advanced app client settings are quite important for us as they impact access tokens lifecycle (Access Token Expiration for our case - we'll keep default 60 minutes).
 They also contain some important sign in settings for user perspective, which we won't touch now.
 Note that all settings related to Refresh Tokens are not of our concern for our particular case, because Client Credentials Flow does not support Refresh Tokens.
 
-![Step 5 - Advanced app client settings](images\cognito_7.png)
+![Step 5 - Advanced app client settings](images/cognito_7.png)
 
 Don't forget to set the tags for the resource, for it to be more easily manageable within your ecosystem, and hit Create.
 
@@ -131,38 +131,38 @@ Now when we have a User Pool and an App Client for Articles Service created, we 
 To do that, we need to proceed to the App Integration blade at our User Pool dashboard and find Resource Server section.
 Proceed with creation of a Resource Server.
 
-![Resource Servers - Empty](images\cognito_8.png)
+![Resource Servers - Empty](images/cognito_8.png)
 
 At the creation screen, we need to provide a name for the resource server, ID (this one is important as it will be later used in the app configs), and custom scopes.
 We put the same name for server name and server id for our case, and specify 2 custom scopes: one for reading schedules, and one for updating them. 
 This corresponds to our protected APIs in User Schedule Service, and we would like to assign these scopes partially to different clients - in order to have role-based access control between our communicating servers.
 
-![Resource Servers - Creation](images\cognito_9.png)
+![Resource Servers - Creation](images/cognito_9.png)
 
 ### Assigning the Scopes to the App Client
 
 Now we need to assign the scopes to our newly created articles-service app client for our app to be able to call specific APIs of user-schedule-service Resource Server.
 To do that, we need to go back to our App Integration blade of our User Pool and select our articles-service app client:
 
-![App Client Selection](images\cognito_10.png)
+![App Client Selection](images/cognito_10.png)
 
 Then we head to Hosted UI section and click Edit.
 There we need to select the identity provider the client would be able to sign in through (our Cognito User Pool), grant type (Client Credentials for our case) and the scopes assigned to the client.
 For demonstration purposes, we will specifically deselect schdule.update scope and select the schedule.read scope - to show that the APIs will be available to the client only if the corresponding scope is assigned.
 
-![App Client Configuration](images\cognito_11.png)
+![App Client Configuration](images/cognito_11.png)
 
 ### Create a Cognito Domain
 
 The last step would be to configure a domain name for our Authorization Server, so that our app client would be able to request an access token from AWS Cognito, in order to send it to the resource server.
 We need to head back to the App Integration blade of our Cognito User Pool, and select either Create a Cognito Domain or Create a Custom Domain in front of the Domain section:
 
-![Domain](images\cognito_12.png)
+![Domain](images/cognito_12.png)
 
 We will select Cognito Domain for simplicity.
 All we need to do next is to set up a unique domain name for our authorization server endpoints:
 
-![Domain Creation](images\cognito_12.png)
+![Domain Creation](images/cognito_12.png)
 
 ### Testing the Configuration
 
@@ -188,7 +188,7 @@ curl --location 'https://soname-training-auth.auth.us-east-1.amazoncognito.com/o
 
 Once we execute it, we'll get a JSON response, containing an access token in the corresponding field.
 
-![Token Request](images\token_curl.png)
+![Token Request](images/token_curl.png)
 
 In essence, the token is in fact a JWT encoded data structure, which includes a whole set of headers, fields (claims) and a signature.
 A signature is what makes such kind of tokens secure - a resource server can verify the signature and make sure the tokens have not been tampered with.
