@@ -14,13 +14,13 @@ public class SecurityConfiguration {
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
         return http
                 .authorizeExchange()
-                .pathMatchers("/articles/**").permitAll()  // Allow anonymous access to /public/** endpoints
-                .anyExchange().authenticated()          // Require authentication for all other endpoints
+                .pathMatchers("/articles/**").permitAll()
+                .anyExchange().authenticated()
                 .and()
                 .httpBasic()
                 .and()
-                .formLogin().disable()                    // Disable form-based login for WebFlux
-                .csrf().disable()                         // Disable CSRF protection for WebFlux
+                .formLogin().disable()
+                .csrf().disable()
                 .build();
     }
 }

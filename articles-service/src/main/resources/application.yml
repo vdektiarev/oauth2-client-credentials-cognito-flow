@@ -14,7 +14,7 @@ spring:
             authorization-grant-type: client_credentials
         provider:
           cognito:
-            token-uri: <your_pool_domain/oauth2/token>
+            token-uri: <your_pool_domain>/oauth2/token
 
 user-schedule-service:
   get-schedule:
