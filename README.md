@@ -195,7 +195,7 @@ A signature is what makes such kind of tokens secure - a resource server can ver
 
 Once we decode the token, we'll get the following data structure in the payload:
 
-```
+```json
 {
   "sub": "cousnlblnjks3l1gc7ph18nao",
   "token_use": "access",
@@ -217,6 +217,333 @@ All we need to do is to code our applications in that way - to exchange and veri
 
 ## Configuring the Client
 
+To implement our Client, we are going to create a Java Web application using Spring Boot with Reactive stack as a general framework and Gradle as a building tool.
+In general, we are going to have a REST API exposed to the public, which is going to call protected User Schedule Service to get or manipulate data.
+
+The code is available in the following repository: https://github.com/vdektiarev/oauth2-client-credentials-cognito-flow/tree/master/articles-service
+
+As for dependencies, we need the bare minimum what is needed to create a Web app with Reactive stack and use an OAuth client library to make calls to the Authorization server:
+
+```groovy
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+```
+
+First, we need to create a configuration for the app.
+Starting with general security configuration, we would like to disable authentication, form logins and permit all service APIs for the public access:
+
+```java
+@Configuration
+@EnableWebFluxSecurity
+public class SecurityConfiguration {
+
+    @Bean
+    public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
+        return http
+                .authorizeExchange()
+                .pathMatchers("/articles/**").permitAll()
+                .anyExchange().authenticated()
+                .and()
+                .httpBasic()
+                .and()
+                .formLogin().disable()                    
+                .csrf().disable() 
+                .build();
+    }
+}
+```
+
+Then we proceed with Web Client configuration - the component which would make the calls to User Schedule Service API.
+We need to declare a client registration component which consumes all the config like client id, client secret and token endpoint - and then declare a web client with that registration:
+
+```java
+@Configuration
+public class CognitoWebClientConfiguration {
+
+    @Bean
+    ReactiveClientRegistrationRepository getRegistration(
+            @Value("${spring.security.oauth2.client.provider.cognito.token-uri}") String token_uri,
+            @Value("${spring.security.oauth2.client.registration.cognito.client-id}") String client_id,
+            @Value("${spring.security.oauth2.client.registration.cognito.client-secret}") String client_secret
+    ) {
+        ClientRegistration registration = ClientRegistration
+                .withRegistrationId("cognito")
+                .tokenUri(token_uri)
+                .clientId(client_id)
+                .clientSecret(client_secret)
+                .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+                .build();
+        return new InMemoryReactiveClientRegistrationRepository(registration);
+    }
+
+    @Bean(name = "cognito")
+    WebClient webClient(ReactiveClientRegistrationRepository clientRegistrations) {
+        InMemoryReactiveOAuth2AuthorizedClientService clientService = new InMemoryReactiveOAuth2AuthorizedClientService(clientRegistrations);
+        AuthorizedClientServiceReactiveOAuth2AuthorizedClientManager authorizedClientManager = new AuthorizedClientServiceReactiveOAuth2AuthorizedClientManager(clientRegistrations, clientService);
+        ServerOAuth2AuthorizedClientExchangeFilterFunction oauth = new ServerOAuth2AuthorizedClientExchangeFilterFunction(authorizedClientManager);
+        oauth.setDefaultClientRegistrationId("cognito");
+        return WebClient.builder()
+                .filter(oauth)
+                .build();
+    }
+}
+```
+
+Then we declare the configuration properties which would be used by the application, including configs from Cognito and general app-related configs.
+The application needs the endpoint, client id and client secret to be able to make calls to Cognito API and to get the Access Token.
+The Web Client would then put this token into request headers to make the calls to User Schedule Service.
+
+```yaml
+server:
+  port: 8082
+
+spring:
+  main:
+    web-application-type: reactive
+  security:
+    oauth2:
+      client:
+        registration:
+          cognito:
+            client-id: <your_client_id>
+            client-secret: <your_client_secret>
+            authorization-grant-type: client_credentials
+        provider:
+          cognito:
+            token-uri: <your_pool_domain>/oauth2/token
+
+user-schedule-service:
+  get-schedule:
+    url: http://localhost:8081/user-schedule/schedule
+  update-schedule:
+    url: http://localhost:8081/user-schedule/schedule/{id}
+```
+
+Ideally you wouldn't keep sensitive data like Client Secrets directly in you application properties files - as keeping such data directly in the codebase can be a major security risk.
+In real production scenarios you may want to look at AWS Services like Systems Manager Parameter Store or Secrets Manager to keep your credentials there, and assign policies to your CI/CD pipeline processes to be able to fetch the credentials during application deployment.
+
+Proceeding with service level declaration, we want to implement the logic to make the calls to User Schedule Service.
+Let's create a simple service level component to do the schedule reads and updates, with simple exception handling:
+
+```java
+@Service
+public class UserScheduleService {
+
+    @Value("${user-schedule-service.get-schedule.url}")
+    private String userScheduleServiceGetScheduleUrl;
+
+    @Value("${user-schedule-service.update-schedule.url}")
+    private String userScheduleServiceUpdateScheduleUrl;
+
+    @Autowired
+    private WebClient cognitoWebClient;
+
+    public Mono<String> getUserSchedule(String userName) {
+        return cognitoWebClient
+                .get()
+                .uri(userScheduleServiceGetScheduleUrl, uriBuilder ->
+                        uriBuilder.queryParam("userName", userName).build())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, ClientResponse::createException)
+                .bodyToMono(String.class);
+    }
+
+    public Mono<String> updateUserSchedule(String scheduleId) {
+        return cognitoWebClient
+                .put()
+                .uri(userScheduleServiceUpdateScheduleUrl, scheduleId)
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, ClientResponse::createException)
+                .bodyToMono(String.class);
+    }
+}
+```
+
+And all we have to do now is to introduce the API level of our service:
+
+```java
+@RestController
+@RequestMapping("/articles")
+public class ArticlesController {
+
+    @Autowired
+    private UserScheduleService userScheduleService;
+
+    @GetMapping("/user-availability/{name}")
+    public Mono<String> getUserAvailabilityForArticles(@PathVariable String name) {
+        return userScheduleService.getUserSchedule(name);
+    }
+
+    @PostMapping
+    public Mono<String> postArticle(@RequestBody Article article) throws ExecutionException, InterruptedException {
+        Mono<String> scheduleServiceResponse = userScheduleService.updateUserSchedule(article.getScheduleId());
+        String schedulingResponse = scheduleServiceResponse.toFuture().get();
+        // call to some DB to save the article
+        return Mono.just("Article from userId:" + article.getUserId() +
+                " has been posted! Schedule update: " + schedulingResponse);
+    }
+}
+```
+
+For simplicity, we won't fully implement all the APIs, we want to keep them at the minimal level to demonstrate the authorization process between two applications.
+In reality, the APIs won't do anything but some string response generation and calls to other services.
+
+The main entrypoint for the Java application remains a default for a general Spring Boot application, nothing special is needed here:
+
+```java
+@SpringBootApplication
+public class ArticlesServiceApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ArticlesServiceApplication.class, args);
+	}
+
+}
+```
+
+We now leave the app as it is and proceed with Resource Server creation - and then we'll test the integration.
+
 ## Configuring the Resource Server
 
+To implement our Resource Server, this time, we are going to create a general Spring Boot Java Web application with no reactive stack - and still using Gradle as a building tool.
+The service would look similar to Articles Service, but with differences on API level and security configuration - this time all our APIs would require both authentication and an appropriate scope assigned.
+
+The code is available in the following repository: https://github.com/vdektiarev/oauth2-client-credentials-cognito-flow/tree/master/user-schedule-service
+
+As for dependencies, we require Spring Boot Web stack and libraries required for an app to act as a Resource Server:
+
+```groovy
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+```
+
+This time, declaring a security configuration, we would like to first check an access token, and additionally check different scopes for different endpoints.
+To implement these checks, our configuration can look like the following:
+
+```java
+@Configuration
+public class SecurityConfiguration {
+
+    private static final String SCOPE_PREFIX = "SCOPE_";
+
+    @Value("${resourceserver.id}")
+    private String resourceServerId;
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http.authorizeRequests(authz -> authz.requestMatchers(HttpMethod.GET, "/user-schedule/schedule/**")
+                        .hasAuthority(getAuthority(SecurityScope.SCHEDULE_READ))
+                        .requestMatchers(HttpMethod.PUT, "/user-schedule/schedule/**")
+                        .hasAuthority(getAuthority(SecurityScope.SCHEDULE_UPDATE))
+                        .anyRequest()
+                        .authenticated())
+                .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
+        return http.build();
+    }
+
+    private String getAuthority(SecurityScope scope) {
+        return SCOPE_PREFIX + resourceServerId + "/" + scope.getId();
+    }
+}
+```
+
+Here we need a resource server id declared, as Cognito generates scope names as <resourceserver.id>/<scope_name>.
+For example, for our case, the read endpoint scope would be "user-schedule-service/schedule.read".
+"SCOPE_" prefix is required by Spring libraries when validated.
+And scope names from our Resource Server declaration in AWS Cognito are extracted to a separate enum for better maintainability.
+
+We still need to declare the application config, where we need to put the issuer URI of Access Tokens to be validated, that they came from a valid source, and resource server id - to validate the scopes.
+
+```yaml
+server:
+  port: 8081
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.<your_region>.amazonaws.com/<your_user_pool_id>
+
+resourceserver:
+  id: <your_resource_server_id>
+```
+
+Now all we need is to declare the API which would be used by Articles Service:
+
+```java
+@RestController
+@RequestMapping("/user-schedule")
+public class UserScheduleController {
+
+    @GetMapping("/schedule")
+    public String getUserSchedule(@RequestParam String userName) {
+        return userName + " is available!";
+    }
+
+    @PutMapping("/schedule/{id}")
+    public String updateSchedule(@PathVariable String id) {
+        return id + " has been updated!";
+    }
+}
+```
+
+The main application entrypoint has nothing special as well - looks similar to the one declared in Articles Service.
+
 ## Testing the Flow
+
+Now, having all applications coded and Cognito User Pool configured, we can finally launch and test the flow.
+
+Launching the applications would require Java 17 installed and can be done via command:
+
+```
+./gradlew bootRun 
+```
+
+We can then try to call our /user-availability API to make sure we've got access to it and are able to can the underlying User Schedule Service:
+
+![Test User Availability](images/test_1.png)
+
+Since it works, let's then try to call our Articles Posting endpoint - which is not supposed to work now, as we assigned only "schedule.read" scope to our App Client:
+
+![Test Articles Post - 1st Attempt](images/test_2.png)
+
+And in the logs we will see an error like this one:
+
+"Caused by: org.springframework.web.reactive.function.client.WebClientResponseException$Forbidden: 403 Forbidden from PUT http://localhost:8081/user-schedule/schedule/12345"
+
+Which is expected, as, again, we did not assign "schedule.update" scope to our articles-service app client.
+Let's fix that by going to the App Client - Hosted UI settings and assigning the appropriate scope:
+
+![Assigning the update scope](images/cognito_14.png)
+
+After we do the save, we can test the changes:
+
+![Test Articles Post - 2nd Attempt](images/test_3.png)
+
+And they work as expected!
+
+## Summary
+
+In this article, we've delved into the core concepts and benefits of the OAuth 2.0 protocol, focusing on the Client Credentials Flow — a vital grant type designed for server-to-server communication. 
+We've explored the fundamental components of OAuth 2.0, from clients and resource servers to authorization servers and access tokens. 
+With a deeper understanding of these components, we've highlighted how the Client Credentials Flow streamlines interactions and enhances security for server applications.
+
+Our journey led us to AWS Cognito, Amazon's powerful authentication and authorization service. 
+By showcasing how to configure AWS Cognito to facilitate the Client Credentials Flow, we've demonstrated a real-world implementation that bridges theory and practice. 
+This hands-on approach equips you with the skills needed to establish secure communication channels between your own server applications.
+
+As you embark on your own endeavors involving server-to-server communication, remember the significance of selecting the appropriate grant type. 
+While the Client Credentials Flow offers remarkable efficiency and security, it's essential to consider the context and requirements of your interactions. 
+Whether it's securing APIs, enhancing microservices communication, or safeguarding data exchanges, OAuth 2.0 combined with AWS Cognito provides a robust foundation.
+
+With this newfound knowledge, you're poised to confidently navigate the intricate realm of secure server communications. 
+By harnessing the capabilities of OAuth 2.0 and leveraging AWS Cognito's features, you can pave the way for seamless, authenticated, and authorized interactions between your server applications. 
+As you continue to explore and innovate, you contribute to a more secure and interconnected digital ecosystem.
