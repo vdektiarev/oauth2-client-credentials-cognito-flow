@@ -1,3 +1,20 @@
+<!-- TOC -->
+* [Implementing OAuth 2.0 Client Credentials Flow with AWS Cognito for Secure Server-to-Server Communication](#implementing-oauth-20-client-credentials-flow-with-aws-cognito-for-secure-server-to-server-communication)
+  * [Understanding OAuth 2.0](#understanding-oauth-20)
+  * [The Client Credentials Flow: Benefits and Use Cases](#the-client-credentials-flow--benefits-and-use-cases)
+  * [Setting Up the Scenario](#setting-up-the-scenario)
+  * [Configuring the Authorization Server](#configuring-the-authorization-server)
+    * [Creating a User Pool and an App Client](#creating-a-user-pool-and-an-app-client)
+    * [Creating a Resource Server with Custom Scopes](#creating-a-resource-server-with-custom-scopes)
+    * [Assigning the Scopes to the App Client](#assigning-the-scopes-to-the-app-client)
+    * [Create a Cognito Domain](#create-a-cognito-domain)
+    * [Testing the Configuration](#testing-the-configuration)
+  * [Configuring the Client](#configuring-the-client)
+  * [Configuring the Resource Server](#configuring-the-resource-server)
+  * [Testing the Flow](#testing-the-flow)
+  * [Summary](#summary)
+<!-- TOC -->
+
 # Implementing OAuth 2.0 Client Credentials Flow with AWS Cognito for Secure Server-to-Server Communication
 
 In today's interconnected digital landscape, secure communication between servers is paramount. 
