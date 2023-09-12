@@ -178,7 +178,7 @@ We need to head back to the App Integration blade of our Cognito User Pool, and 
 We will select Cognito Domain for simplicity.
 All we need to do next is to set up a unique domain name for our authorization server endpoints:
 
-![Domain Creation](images/cognito_12.png)
+![Domain Creation](images/cognito_13.png)
 
 ### Testing the Configuration
 
